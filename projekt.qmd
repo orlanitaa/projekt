@@ -1,0 +1,245 @@
+---
+title: "Analiza poziomu zaufania społecznego i poczucia szczęścia w krajach europejskich w kontekście doświadczeń historycznych"
+author: "Anita Orlova"
+format:
+  html:
+    theme: flatly
+    toc: true
+    toc-location: left
+    toc-title: "Spis treści"
+    toc-depth: 3
+    number-sections: true
+    smooth-scroll: true
+    self-contained: true 
+execute:
+  echo: false
+  warning: false
+  message: false
+bibliography: references.bib
+---
+
+```{r}
+library(tidyverse)
+library(haven)
+library(janitor)
+library(ggplot2)
+library(plotly)
+library(kableExtra)
+library(ggeffects)
+```
+
+# Wstęp
+
+Współczesna Europa charakteryzuje się znacznym zróżnicowaniem pod względem kluczowych wskaźników społecznych, co jest szczególnie widoczne w przypadku krajów o odmiennych ścieżkach rozwoju. Istotną rolę odgrywają tu uwarunkowania historyczne oraz specyficzne procesy kształtujące lokalne społeczeństwa na przestrzeni lat.
+
+Celem mojego projektu jest porównanie wybranych krajów europejskich pod względem zaufania społecznego i poczucia szczęścia. Kraje podzielono na dwie grupy: te o względnie stabilnej historii instytucjonalnej oraz te, które doświadczyły intensywnych kryzysów i głębokich przemian ustrojowych. Analiza ma charakter eksploracyjny i opisowy, bez ambicji wnioskowania przyczynowego.
+
+**Grupy porównawcze:** 
+
+- **Trauma**: Polska, Ukraina, Litwa, Łotwa, Rumunia  
+- **Stabilne**: Szwecja, Dania, Niemcy, Holandia
+
+Źródło danych: European Values Study 2017: Integrated Dataset (EVS 2017) [@EVS2017].
+
+# Pytania badawcze
+
+1: Czy poziom ogólnego zaufania społecznego różni się pomiędzy krajami z historią intensywnych kryzysów a krajami o względnej stabilności instytucjonalnej? 
+
+2: Czy poczucie szczęścia jest niższe w krajach z doświadczeniem historycznych kryzysów zbiorowych? 
+
+3: Czy związek pomiędzy zaufaniem społecznym a poczuciem szczęścia jest taki sam w obu grupach krajów?
+
+4: Czy różnice pokoleniowe w zakresie zaufania społecznego są większe w krajach dotkniętych historycznymi kryzysami? 
+
+```{r}
+evs_raw <- read_sav("ZA7500_v5-0-0.sav") %>% clean_names()
+
+evs_sel <- evs_raw %>%
+  select(
+    cntry_y,
+    v31,
+    v7,
+    v39,
+    v226,
+    age_r2,
+    v243_edulvlb,
+    v261
+  )
+
+```
+
+```{r}
+evs_sel <- evs_sel %>%
+  mutate(
+    country = as_factor(cntry_y),
+    country = sub(" \\(.*\\)", "", country),
+    country_group = case_when(
+      country %in% c("Poland", "Ukraine", "Lithuania", "Latvia", "Romania") ~ "Trauma",
+      country %in% c("Sweden", "Denmark", "Germany", "Netherlands") ~ "Stabilne",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(country_group))
+```
+
+```{r}
+evs_clean <- evs_sel %>%
+  filter(
+    v31 %in% 1:2, v7 %in% 1:4, v39 %in% 1:10,
+    !is.na(age_r2), !is.na(v243_edulvlb), !is.na(v261)
+  ) %>%
+  mutate(
+    # rekodowanie skal: wyższa wartość = wyższy poziom
+    trust = 3 - v31,
+    happy = 5 - v7,
+    life_sat = v39,
+    education = v243_edulvlb,
+    income = v261,
+    age = 2017 - v226
+  )
+```
+
+# Wizualizacja geograficzna
+
+![Podział krajów na grupy Trauma i Stabilne](mapa.png)
+
+Mapa ilustruje podział na grupy – pomarańczowy kolor dla krajów z doświadczeniem intensywnych kryzysów historycznych, zielony dla krajów o względnej stabilności instytucjonalnej.
+
+# Poziom zaufania społecznego w wybranych krajach
+
+```{r}
+trust_by_country <- evs_clean %>%
+  filter(country %in% c("Poland", "Ukraine", "Lithuania", "Latvia", "Romania",
+                        "Sweden", "Denmark", "Germany", "Netherlands")) %>%
+  group_by(country, country_group) %>%
+  summarise(mean_trust = mean(trust, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(country = fct_reorder(country, mean_trust, .desc = TRUE))
+
+p_trust_points_clean <- ggplot(trust_by_country,
+                               aes(x = mean_trust,
+                                   y = country,
+                                   color = country_group)) +
+  geom_point(size = 3, alpha = 0.9) +
+  scale_color_manual(values = c("Trauma" = "#d95f02",
+                                "Stabilne" = "#1b9e77"),
+                     name = "Grupa krajów") +
+  labs(
+    title = "Średni poziom zaufania społecznego",
+    x = "Średnie zaufanie",
+    y = "Kraj"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "bottom",
+    axis.text.y = element_text(size = 12)
+  )
+p_trust_points_clean
+```
+
+Kraje grupy „Stabilne” (Szwecja, Dania, Niemcy, Holandia) osiągają wyraźnie wyższe wartości. Kraje grupy „Trauma” (Polska, Ukraina, Litwa, Łotwa, Rumunia) tworzą zwartą grupę o znacznie niższym poziomie zaufania.
+
+# Poziom zaufania społecznego
+
+```{r}
+p_trust <- ggplot(evs_clean, aes(x = country_group, y = trust, fill = country_group)) +
+  geom_violin(alpha = 0.7) +
+  scale_fill_manual(values = c("Trauma" = "#d95f02", "Stabilne" = "#1b9e77")) +
+  labs(title = "Poziom zaufania społecznego", x = "Grupa krajów", y = "Skala zaufania") +
+  theme_minimal() +
+  theme(legend.position = "none")
+p_trust
+```
+
+Wykres pokazuje rozkład odpowiedzi na pytanie o zaufanie w obu grupach. W grupie Stabilne większość odpowiedzi koncentruje się w wyższej części skali, podczas gdy w grupie Trauma dominują wartości niskie – widać wyraźne przesunięcie w dół.
+
+# Poczucie szczęścia
+
+```{r}
+p_happy <- ggplot(evs_clean, aes(x = country_group, y = happy, fill = country_group)) +
+  geom_violin(trim = FALSE, alpha = 0.6) +
+  scale_fill_manual(values = c("Trauma" = "#d95f02", "Stabilne" = "#1b9e77")) +
+  labs(title = "Rozkład poziomu szczęścia", x = "Grupa krajów", y = "Skala szczęścia") +
+  theme_minimal() +
+  theme(legend.position = "none")
+p_happy
+```
+
+Najszersza część rozkładu w obu grupach przypada na okolice oceny 3. Powyżej trójki znacznie szerszy jest rozkład w grupie Stabilne, natomiast poniżej trójki wyraźnie więcej odpowiedzi ma grupa Trauma.
+
+# Zależność między zaufaniem a poczuciem szczęścia
+
+```{r}
+p_scatter <- ggplot(evs_clean, aes(x = trust, y = happy, color = country_group)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~country_group) +
+  scale_color_manual(values = c("Trauma" = "#d95f02", "Stabilne" = "#1b9e77")) +
+  labs(title = "Zależność zaufania i szczęścia", x = "Zaufanie", y = "Szczęście") +
+  theme_minimal() +
+  theme(legend.position = "none")
+ggplotly(p_scatter)
+```
+
+Wykres punktowy z liniami regresji pokazuje relację między zaufaniem a poczuciem szczęścia oddzielnie dla każdej grupy. W obu grupach widoczna jest słaba dodatnia zależność, jednak w grupie Stabilne linia jest nieco bardziej nachylona, a punkty są ogólnie wyżej na osi szczęścia.
+
+# Różnice pokoleniowe w zaufaniu społecznym
+
+```{r}
+p_age <- evs_clean %>%
+  group_by(country_group, age_r2) %>%
+  summarise(mean_trust = mean(trust), .groups = 'drop') %>%
+  ggplot(aes(x = factor(age_r2), y = mean_trust, fill = country_group)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("Trauma" = "#d95f02", "Stabilne" = "#1b9e77")) +
+  labs(title = "Zaufanie według wieku", x = "Grupa wieku (1: 15-29, 2: 30-49, 3: 50+)", y = "Średnie zaufanie") +
+  theme_minimal()
+p_age
+```
+
+Wykres słupkowy porównuje średnie zaufanie w trzech szerokich grupach wiekowych. W obu grupach krajów poziom zaufania pozostaje stosunkowo stabilny między pokoleniami, a obserwowane różnice są bardzo niewielkie i w dużej mierze trudne do uznania za istotne. W grupie Trauma najmłodsza kategoria ma nieznacznie wyższą średnią niż dwie starsze, ale różnice pozostają niewielkie.
+
+# Zależność zaufania od wieku
+
+```{r}
+p_age_scatter <- ggplot(evs_clean, aes(x = age, y = trust, color = country_group)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_manual(values = c("Trauma" = "#d95f02", "Stabilne" = "#1b9e77")) +
+  labs(title = "Zależność zaufania od wieku", x = "Wiek respondenta", y = "Poziom zaufania") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+p_age_scatter
+```
+
+Wykres punktowy z wygładzoną krzywą pokazuje, jak poziom zaufania zmienia się wraz z wiekiem respondenta. W grupie Stabilne linia jest lekko wygięta w górę w okolicach starszych grup wiekowych. W grupie Trauma krzywa ma wgłębienia – młodsi deklarują średnio nieco wyższe zaufanie.
+
+# Satysfakcja z życia
+
+```{r}
+p_life_sat <- ggplot(evs_clean, aes(x = country_group, y = life_sat, fill = country_group)) +
+  geom_violin(trim = FALSE, alpha = 0.6) +
+  geom_boxplot(width = 0.15, fill = "white") +
+  scale_fill_manual(values = c("Trauma" = "#d95f02", "Stabilne" = "#1b9e77")) +
+  labs(title = "Rozkład satysfakcji z życia", x = "Grupa krajów", y = "Skala satysfakcji") +
+  theme_minimal() +
+  theme(legend.position = "none")
+p_life_sat
+```
+
+Wykres violin z nałożonym boxplotem pokazuje rozkład satysfakcji z życia w obu grupach. W grupie Stabilne mediana leży wyżej, a najszersza część rozkładu koncentruje się w górnej części skali – powyżej mediany rozkład jest szerszy niż w grupie Trauma. W grupie Trauma mediana jest niższa, a dolna część wyraźnie grubsza.
+
+# Podsumowanie i wnioski
+
+Analiza danych European Values Study 2017 potwierdza, że kraje o stabilnej historii instytucjonalnej charakteryzują się wyższym poziomem zaufania społecznego oraz większym poczuciem szczęścia. Związek między zaufaniem społecznym a dobrostanem okazuje się natomiast słaby i zbliżony w obu grupach krajów, bez wyraźnych różnic w sile zależności. W krajach dotkniętych intensywnymi kryzysami historycznymi obserwuje się niższe wartości analizowanych wskaźników oraz większe zróżnicowanie odpowiedzi.
+
+Różnice pokoleniowe w zakresie zaufania społecznego okazują się niewielkie w obu grupach krajów. Choć w państwach posttransformacyjnych młodsze kohorty wykazują nieco wyższe zaufanie niż starsze, skala tych różnic nie wskazuje na wyraźny przełom międzypokoleniowy. Wyniki sugerują trwały wpływ doświadczeń historycznych na kapitał społeczny, przy jednoczesnych, bardzo powolnych oznakach zmian w młodszych generacjach.
+
+# Ograniczenia badania
+
+- Uproszczony podział krajów na grupy  
+- Dane pochodzą z 2017 roku – nie uwzględniają późniejszych wydarzeń
+- Analiza ma charakter opisowy – nie pozwala na wnioskowanie o przyczynowości  
+- Różne daty zbierania danych w poszczególnych krajach
+
+::: {#refs} :::
